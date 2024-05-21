@@ -5,7 +5,7 @@ import plotly.express as px
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = Dash(__name__, external_stylesheets=external_stylesheets)
-
+server = app.server
 # Load the first CSV file
 df1 = pd.read_csv('rfid_data.csv')
 df1['Time'] = pd.to_datetime(df1['Time'], format='%H:%M:%S:%d:%m:%Y')
