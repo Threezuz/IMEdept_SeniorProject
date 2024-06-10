@@ -1,153 +1,135 @@
 from dash import Dash, html, dcc, Input, Output, callback
 import pandas as pd
 import plotly.express as px
+import os
 
 external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
-# Load the first CSV file
-df1 = pd.read_csv('rfid_data.csv')
-df1['Time'] = pd.to_datetime(df1['Time'], format='%H:%M:%S:%d:%m:%Y')
+# Function to read data
+def read_data():
+    if os.path.exists('tag_data.csv'):
+        df = pd.read_csv('tag_data.csv')
+        if 'Timestamp' in df.columns:
+            try:
+                df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+            df.dropna(subset=['Timestamp'], inplace=True)
+        return df
+    else:
+        return pd.DataFrame(columns=["Timestamp", "RFID Tag", "Antenna", "Time Between Stamps"])
 
-# Load the second CSV file
-df2 = pd.read_csv('prediction_results.csv')
-df2['Date'] = pd.to_datetime(df2['Date'])
+# Function to read prediction data
+def read_prediction_data():
+    if os.path.exists('prediction_results.csv'):
+        df = pd.read_csv('prediction_results.csv')
+        if 'Date' in df.columns:
+            try:
+                df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d %H:%M:%S')
+            except ValueError:
+                df['Date'] = pd.to_datetime(df['Date'], errors='coerce')
+            df.dropna(subset=['Date'], inplace=True)
+        return df
+    else:
+        return pd.DataFrame(columns=["Image", "Predicted Class", "Date"])
+
+# Initial data read
+df = read_data()
+prediction_df = read_prediction_data()
 
 app.layout = html.Div([
-    # Existing layout components for the first set of graphs
     html.Div([
         html.Div([
             dcc.Dropdown(
-                df1['Tag ID'].unique(),
-                df1['Tag ID'].unique()[0],
-                id='tag-id-dropdown'
+                id='tag-dropdown',
+                options=[{'label': tag, 'value': tag} for tag in df['RFID Tag'].unique()],
+                value=df['RFID Tag'].unique()[0] if not df.empty else None,
+                placeholder="Select an RFID tag",
             ),
         ], style={'width': '49%', 'display': 'inline-block'}),
-
-        html.Div([
-            dcc.RadioItems(
-                ['TimebetweenReads', 'Cycle Time'],
-                'TimebetweenReads',
-                id='metric-radio',
-                labelStyle={'display': 'inline-block', 'marginTop': '5px'}
-            )
-        ], style={'width': '49%', 'float': 'right', 'display': 'inline-block'})
     ], style={'padding': '10px 5px'}),
-
     html.Div([
-        dcc.Graph(id='indicator-scatter')
-    ], style={'width': '49%', 'display': 'inline-block', 'padding': '0 20'}),
-
-    html.Div([
-        dcc.Graph(id='time-series')
-    ], style={'display': 'inline-block', 'width': '49%'}),
-
-    html.Div(dcc.Slider(
-        min=0,
-        max=len(df1['Time'].unique()) - 1,
-        step=None,
-        id='time-slider',
-        value=len(df1['Time'].unique()) - 1,
-        marks={i: str(time) for i, time in enumerate(sorted(df1['Time'].unique()))}
-    ), style={'width': '49%', 'padding': '0px 20px 20px 20px'}),
-
-    html.Div([
-        dcc.Graph(id='cycle-time-comparison')
-    ], style={'width': '100%', 'padding': '0 20'}),
-
-    html.Div([
-        html.Button("Download CSV", id="btn-download-csv"),
-        dcc.Download(id="download-csv")
-    ], style={'padding': '10px 5px'}),
-
-    # New layout components for the second set of graphs
-    html.Hr(),
-    html.H3("Prediction Results"),
-    html.Div([
-        dcc.Graph(id='predicted-class-scatter')
-    ], style={'width': '49%', 'display': 'inline-block', 'padding': '0 20'}),
-
-    html.Div([
-        dcc.Graph(id='predicted-class-bar')
-    ], style={'display': 'inline-block', 'width': '49%'})
+        dcc.Graph(id='time-between-stamps-graph'),
+        dcc.Graph(id='cycle-time-graph'),
+        dcc.Graph(id='comparison-graph'),
+        dcc.Graph(id='prediction-graph'),
+    ], style={'display': 'flex', 'flex-direction': 'column'}),
+    dcc.Interval(
+        id='interval-component',
+        interval=1*1000,  
+        n_intervals=0
+    )
 ])
 
+@callback(
+    Output('tag-dropdown', 'options'),
+    Input('interval-component', 'n_intervals')
+)
+def update_dropdown(n):
+    df = read_data()
+    return [{'label': tag, 'value': tag} for tag in df['RFID Tag'].unique()]
 
 @callback(
-    [Output('indicator-scatter', 'figure'),
-     Output('cycle-time-comparison', 'figure')],
-    [Input('tag-id-dropdown', 'value'),
-     Input('metric-radio', 'value'),
-     Input('time-slider', 'value')])
-def update_graphs(tag_id, metric, time_index):
-    selected_time = sorted(df1['Time'].unique())[time_index]
-    dff = df1[(df1['Tag ID'] == tag_id) & (df1['Time'] <= selected_time)]
-
-    scatter_fig = px.scatter(dff, x='Time', y=metric)
-    scatter_fig.update_xaxes(title='Time')
-    scatter_fig.update_yaxes(title=metric)
-    scatter_fig.update_layout(margin={'l': 40, 'b': 40, 't': 10, 'r': 0}, hovermode='closest')
-
-    comparison_dff = df1[df1['Time'] <= selected_time]
-    comparison_fig = px.line(comparison_dff, x='Time', y='Cycle Time', color='Tag ID')
-    comparison_fig.update_xaxes(title='Time')
-    comparison_fig.update_yaxes(title='Cycle Time')
-    comparison_fig.update_layout(margin={'l': 40, 'b': 40, 't': 10, 'r': 0}, hovermode='closest')
-
-    return scatter_fig, comparison_fig
-
-
-@callback(
-    Output('time-series', 'figure'),
-    [Input('indicator-scatter', 'hoverData'),
-     Input('tag-id-dropdown', 'value'),
-     Input('metric-radio', 'value')])
-def update_time_series(hoverData, tag_id, metric):
-    try:
-        point_index = hoverData['points'][0]['pointIndex']
-        dff = df1[df1['Tag ID'] == tag_id].iloc[:point_index + 1]
-        title = f'Time Series for {tag_id}'
-        return create_time_series(dff, metric, title)
-    except Exception as e:
-        return create_time_series(df1[df1['Tag ID'] == tag_id], metric, f'Time Series for {tag_id}')
-
-
-def create_time_series(dff, metric, title):
-    fig = px.scatter(dff, x='Time', y=metric)
-    fig.update_traces(mode='lines+markers')
-    fig.update_xaxes(showgrid=False)
-    fig.update_yaxes(title=metric)
-    fig.add_annotation(x=0, y=0.85, xanchor='left', yanchor='bottom',
-                       xref='paper', yref='paper', showarrow=False, align='left',
-                       text=title)
-    fig.update_layout(height=225, margin={'l': 20, 'b': 30, 'r': 10, 't': 10})
+    Output('time-between-stamps-graph', 'figure'),
+    Input('tag-dropdown', 'value'),
+    Input('interval-component', 'n_intervals')
+)
+def update_time_between_stamps_graph(selected_tag, n):
+    df = read_data()
+    if selected_tag:
+        df = df[df['RFID Tag'] == selected_tag]
+        df['Time Between Stamps'] = df['Time Between Stamps'].astype(float).round(3)
+        df['Smoothed Time Between Stamps'] = df['Time Between Stamps'].rolling(window=5).mean()  
+        fig = px.line(df, x='Timestamp', y='Smoothed Time Between Stamps', title=f'Time Between Stamps for {selected_tag}')
+        fig.update_yaxes(tickformat=".3f")
+    else:
+        fig = px.line(title='Time Between Stamps')
     return fig
 
+@callback(
+    Output('cycle-time-graph', 'figure'),
+    Input('tag-dropdown', 'value'),
+    Input('interval-component', 'n_intervals')
+)
+def update_cycle_time_graph(selected_tag, n):
+    df = read_data()
+    if selected_tag:
+        df = df[df['RFID Tag'] == selected_tag]
+        df['Cycle Time'] = df['Time Between Stamps'].astype(float).cumsum().round(3)
+        fig = px.line(df, x='Timestamp', y='Cycle Time', title=f'Cycle Time for {selected_tag}')
+        fig.update_yaxes(tickformat=".3f")
+    else:
+        fig = px.line(title='Cycle Time')
+    return fig
 
 @callback(
-    Output("download-csv", "data"),
-    Input("btn-download-csv", "n_clicks"),
-    prevent_initial_call=True
+    Output('comparison-graph', 'figure'),
+    Input('interval-component', 'n_intervals')
 )
-def download_csv(n_clicks):
-    return dcc.send_data_frame(df1.to_csv, "rfid_data.csv")
-
+def update_comparison_graph(n):
+    df = read_data()
+    if not df.empty:
+        df['Time Between Stamps'] = df['Time Between Stamps'].astype(float)
+        df['Cycle Time'] = df.groupby('RFID Tag')['Time Between Stamps'].cumsum().round(3)
+        fig = px.line(df, x='Timestamp', y='Cycle Time', color='RFID Tag', title='Comparison of Cycle Times')
+        fig.update_yaxes(tickformat=".3f")
+    else:
+        fig = px.line(title='Comparison of Cycle Times')
+    return fig
 
 @callback(
-    Output('predicted-class-scatter', 'figure'),
-    Output('predicted-class-bar', 'figure'),
-    Input('btn-download-csv', 'n_clicks')  # This can be modified as per need
+    Output('prediction-graph', 'figure'),
+    Input('interval-component', 'n_intervals')
 )
-def update_prediction_graphs(n_clicks):
-    scatter_fig = px.scatter(df2, x='Date', y='Predicted Class', color='Image')
-    scatter_fig.update_layout(title='Predicted Class Scatter Plot')
-
-    bar_fig = px.bar(df2, x='Predicted Class', color='Image')
-    bar_fig.update_layout(title='Predicted Class Bar Plot')
-
-    return scatter_fig, bar_fig
-
+def update_prediction_graph(n):
+    prediction_df = read_prediction_data()
+    if not prediction_df.empty:
+        fig = px.histogram(prediction_df, x='Date', color='Predicted Class', title='Predicted Class Counts Over Time', nbins=50)
+    else:
+        fig = px.histogram(title='Predicted Class Counts Over Time')
+    return fig
 
 if __name__ == '__main__':
     app.run_server(debug=True, host='0.0.0.0', port=8051)
