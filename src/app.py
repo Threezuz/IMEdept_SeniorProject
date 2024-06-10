@@ -7,6 +7,7 @@ external_stylesheets = ['https://codepen.io/chriddyp/pen/bWLwgP.css']
 
 app = Dash(__name__, external_stylesheets=external_stylesheets)
 server = app.server
+
 # Function to read data
 def read_data():
     if os.path.exists('tag_data.csv'):
@@ -56,27 +57,21 @@ app.layout = html.Div([
         dcc.Graph(id='comparison-graph'),
         dcc.Graph(id='prediction-graph'),
     ], style={'display': 'flex', 'flex-direction': 'column'}),
-    dcc.Interval(
-        id='interval-component',
-        interval=1*1000,  
-        n_intervals=0
-    )
 ])
 
 @callback(
     Output('tag-dropdown', 'options'),
-    Input('interval-component', 'n_intervals')
+    Input('tag-dropdown', 'value')
 )
-def update_dropdown(n):
+def update_dropdown(selected_tag):
     df = read_data()
     return [{'label': tag, 'value': tag} for tag in df['RFID Tag'].unique()]
 
 @callback(
     Output('time-between-stamps-graph', 'figure'),
-    Input('tag-dropdown', 'value'),
-    Input('interval-component', 'n_intervals')
+    Input('tag-dropdown', 'value')
 )
-def update_time_between_stamps_graph(selected_tag, n):
+def update_time_between_stamps_graph(selected_tag):
     df = read_data()
     if selected_tag:
         df = df[df['RFID Tag'] == selected_tag]
@@ -90,10 +85,9 @@ def update_time_between_stamps_graph(selected_tag, n):
 
 @callback(
     Output('cycle-time-graph', 'figure'),
-    Input('tag-dropdown', 'value'),
-    Input('interval-component', 'n_intervals')
+    Input('tag-dropdown', 'value')
 )
-def update_cycle_time_graph(selected_tag, n):
+def update_cycle_time_graph(selected_tag):
     df = read_data()
     if selected_tag:
         df = df[df['RFID Tag'] == selected_tag]
@@ -106,9 +100,9 @@ def update_cycle_time_graph(selected_tag, n):
 
 @callback(
     Output('comparison-graph', 'figure'),
-    Input('interval-component', 'n_intervals')
+    Input('tag-dropdown', 'value')
 )
-def update_comparison_graph(n):
+def update_comparison_graph(selected_tag):
     df = read_data()
     if not df.empty:
         df['Time Between Stamps'] = df['Time Between Stamps'].astype(float)
@@ -121,9 +115,9 @@ def update_comparison_graph(n):
 
 @callback(
     Output('prediction-graph', 'figure'),
-    Input('interval-component', 'n_intervals')
+    Input('tag-dropdown', 'value')
 )
-def update_prediction_graph(n):
+def update_prediction_graph(selected_tag):
     prediction_df = read_prediction_data()
     if not prediction_df.empty:
         fig = px.histogram(prediction_df, x='Date', color='Predicted Class', title='Predicted Class Counts Over Time', nbins=50)
